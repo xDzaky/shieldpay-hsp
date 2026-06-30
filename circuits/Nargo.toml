@@ -1,0 +1,7 @@
+[package]
+name = "shieldpay_range_proof"
+type = "bin"
+authors = ["ShieldPay-HSP"]
+compiler_version = ">=1.0.0-beta.0"
+
+[dependencies]
