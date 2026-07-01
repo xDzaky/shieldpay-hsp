@@ -7,7 +7,7 @@
 import { Router } from 'express';
 import type { ShieldPayDB } from '../db/database.js';
 import { verifyRangeProof } from '../services/zk.js';
-import { verifySettlement } from '../services/hsp.js';
+import { getPayment as getHSPPayment, explainPayment } from '../services/hsp.js';
 
 export function createVerifyRouter(db: ShieldPayDB): Router {
   const router = Router();
@@ -45,12 +45,15 @@ export function createVerifyRouter(db: ShieldPayDB): Router {
         db.updateZkProofStatus(proof.id as string, result.valid ? 'VALID' : 'INVALID');
       }
 
-      // Re-verify HSP settlement (NOT from cache)
-      const hspVerification = await verifySettlement(paymentId);
+      // Re-verify HSP settlement via real coordinator API
+      const hspPayment = await getHSPPayment(paymentId);
+      const hspExplanation = await explainPayment(paymentId);
+
+      const hspVerified = hspPayment?.status === 'SETTLED';
+      const hspDecision = hspExplanation?.outcomeClass ?? (hspVerified ? 'ACCEPT' : 'PENDING');
 
       // Commitment check
       const commitmentExists = Boolean(payment.amount_commitment);
-
       const isAnchored = Boolean(payment.anchored);
 
       res.json({
@@ -69,22 +72,23 @@ export function createVerifyRouter(db: ShieldPayDB): Router {
         commitment_valid: commitmentExists,
         commitment: payment.amount_commitment,
 
-        // HSP verification (fresh)
+        // HSP verification (fresh from real coordinator)
         hsp_verification: {
-          verified: hspVerification.verified,
-          required_capabilities: hspVerification.requiredCapabilities,
-          satisfied_capabilities: hspVerification.satisfiedCapabilities,
-          verifier_decision: hspVerification.verifierDecision,
+          verified: hspVerified,
+          status: hspPayment?.status ?? 'UNKNOWN',
+          verifier_decision: hspDecision,
+          explanation: hspExplanation,
+          coordinator_url: `https://hsp-hackathon.hashkeymerchant.com/explorer`,
         },
 
         // Overall result
-        overall_valid: zkValid && commitmentExists && hspVerification.verified,
+        overall_valid: zkValid && commitmentExists && hspVerified,
 
         // Transparency
         transparency_note: !isAnchored
           ? 'This verification ran against local/demo data. On-chain anchoring not yet confirmed.'
           : 'All verifications ran against on-chain confirmed data.',
-        note: 'This verification was performed independently and does NOT rely on cached status. Results are computed fresh on each request.',
+        note: 'This verification was performed independently via the HSP Coordinator API. Results are computed fresh on each request.',
       });
     } catch (error) {
       console.error('[Verify] Error:', error);

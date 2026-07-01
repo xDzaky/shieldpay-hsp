@@ -1,115 +1,220 @@
 // ============================================================
-// ShieldPay-HSP — HSP Coordinator Client
+// ShieldPay-HSP — HSP Coordinator Client (REAL API Integration)
 // Interfaces with HashKey Settlement Protocol coordinator
+// Docs: https://hsp-hackathon.hashkeymerchant.com/docs
 // ============================================================
 
-import { sdkCall } from '../utils/sdk-wrapper.js';
+const HSP_BASE = process.env.HSP_COORDINATOR_URL ?? 'https://hsp-hackathon.hashkeymerchant.com';
+const HSP_KEY  = process.env.HSP_API_KEY ?? '';
 
-/** HSP settlement status */
-export type HSPStatus = 'PROPOSED' | 'OBSERVED' | 'SETTLED' | 'REJECTED';
-
-/** Get available HSP issuers (attestation providers) */
-export async function getIssuers(): Promise<Array<{ id: string; name: string; capabilities: string[] }>> {
-  return sdkCall(
-    async () => {
-      const url = process.env.HSP_COORDINATOR_URL;
-      if (!url) throw new Error('HSP_COORDINATOR_URL not set');
-      const resp = await fetch(`${url}/issuers`, {
-        headers: { 'x-api-key': process.env.HSP_API_KEY ?? '' },
-      });
-      if (!resp.ok) throw new Error(`HSP issuers: ${resp.status}`);
-      return resp.json();
-    },
-    [
-      { id: 'hashkey-kyc', name: 'HashKey KYC Provider', capabilities: ['attests:kyc'] },
-      { id: 'hashkey-sanctions', name: 'HashKey Sanctions Screener', capabilities: ['attests:sanctions'] },
-      { id: 'public', name: 'Public (no attestation)', capabilities: [] },
-    ],
-    'HSP Get Issuers'
-  );
+/** Helper: build headers for HSP API calls */
+function hspHeaders(needsAuth = false): Record<string, string> {
+  const h: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (needsAuth && HSP_KEY) {
+    h['Authorization'] = `Bearer ${HSP_KEY}`;
+  }
+  return h;
 }
 
-/** Propose a settlement to HSP Coordinator */
-export async function proposeSettlement(params: {
+/** Helper: safe fetch with timeout and error handling */
+async function hspFetch<T>(path: string, opts: RequestInit = {}, fallback: T): Promise<T> {
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 10000);
+    const resp = await fetch(`${HSP_BASE}${path}`, {
+      ...opts,
+      signal: controller.signal,
+    });
+    clearTimeout(timeout);
+    if (!resp.ok) {
+      console.error(`[HSP] ${opts.method ?? 'GET'} ${path} → ${resp.status} ${resp.statusText}`);
+      const body = await resp.text().catch(() => '');
+      console.error(`[HSP] Response body: ${body.slice(0, 500)}`);
+      return fallback;
+    }
+    return await resp.json() as T;
+  } catch (err: any) {
+    console.error(`[HSP] ${opts.method ?? 'GET'} ${path} error:`, err.message ?? err);
+    return fallback;
+  }
+}
+
+// ── Types matching real HSP Coordinator responses ──
+
+export type HSPStatus = 'PROPOSED' | 'ATTEMPTED' | 'SETTLED' | 'EXPIRED' | 'FAILED' | 'DISPUTED';
+
+export interface HSPChainInfo {
+  name: string;
+  chainId: number;
+  stablecoin: { address: string; symbol: string; decimals: number };
+  confirmations: number;
+  verifyingContract: string;
+  adapterInstanceKey: string;
+  adapterAddress: string;
+  adapterOperatorUrl: string;
+}
+
+export interface HSPPayment {
   paymentId: string;
-  signedMandate: string;
-  amountCommitment: string;
-  capabilities: string[];
-}): Promise<{ status: HSPStatus; proposalId: string }> {
-  return sdkCall(
-    async () => {
-      const url = process.env.HSP_COORDINATOR_URL;
-      if (!url) throw new Error('HSP_COORDINATOR_URL not set');
-      const resp = await fetch(`${url}/propose`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-api-key': process.env.HSP_API_KEY ?? '',
-        },
-        body: JSON.stringify(params),
-      });
-      if (!resp.ok) throw new Error(`HSP propose: ${resp.status}`);
-      return resp.json();
-    },
-    {
-      status: 'PROPOSED' as HSPStatus,
-      proposalId: `hsp-demo-${params.paymentId.slice(0, 8)}`,
-    },
-    'HSP Propose Settlement'
-  );
-}
-
-/** Get settlement receipt from HSP Coordinator */
-export async function getReceipt(paymentId: string): Promise<{
+  chain: string;
   status: HSPStatus;
-  receiptId: string | null;
-  observations: Array<{ observer: string; timestamp: string }>;
-} | null> {
-  return sdkCall(
-    async () => {
-      const url = process.env.HSP_COORDINATOR_URL;
-      if (!url) throw new Error('HSP_COORDINATOR_URL not set');
-      const resp = await fetch(`${url}/receipts/${paymentId}`, {
-        headers: { 'x-api-key': process.env.HSP_API_KEY ?? '' },
-      });
-      if (resp.status === 404) return null;
-      if (!resp.ok) throw new Error(`HSP receipt: ${resp.status}`);
-      return resp.json();
-    },
-    {
-      status: 'SETTLED' as HSPStatus,
-      receiptId: `rcpt-demo-${paymentId.slice(0, 8)}`,
-      observations: [
-        { observer: 'ShieldAdapter', timestamp: new Date().toISOString() },
-      ],
-    },
-    'HSP Get Receipt'
+  amount: string;
+  token: string;
+  createdAt: number;
+  updatedAt: number;
+  payer?: string;
+  recipient?: string;
+  mandate?: any;
+  receipt?: any;
+  attestations?: any[];
+}
+
+export interface HSPStats {
+  byChainStatus: Array<{ chain: string; status: string; count: number }>;
+  totalPayments: number;
+}
+
+export interface HSPExplainResult {
+  paymentId: string;
+  outcomeClass: string;
+  decision: any;
+  mandate: any;
+  receipt: any;
+  attestations: any[];
+}
+
+// ── Real API calls ──
+
+/** GET /chains — chain registry + adapter addresses */
+export async function getChains(): Promise<HSPChainInfo[]> {
+  return hspFetch<HSPChainInfo[]>('/chains', {}, []);
+}
+
+/** GET /stats — public aggregate dashboard */
+export async function getStats(): Promise<HSPStats> {
+  return hspFetch<HSPStats>('/stats', {}, { byChainStatus: [], totalPayments: 0 });
+}
+
+/** GET /requirements?chain= — deployment requirement advertisement */
+export async function getRequirements(chain = 'hashkey-testnet'): Promise<any> {
+  return hspFetch(`/requirements?chain=${chain}`, {}, null);
+}
+
+/** GET /issuers — compliance attestation issuers */
+export async function getIssuers(): Promise<any> {
+  return hspFetch('/issuers', {}, {});
+}
+
+/** GET /payments — browse all payments (requires Bearer key) */
+export async function getPayments(limit = 20, offset = 0): Promise<HSPPayment[]> {
+  return hspFetch<HSPPayment[]>(
+    `/payments?limit=${limit}&offset=${offset}`,
+    { headers: hspHeaders(true) },
+    []
   );
 }
 
-/** Verify settlement through HSP verifier (requiredCaps ⊆ satisfiedCaps) */
-export async function verifySettlement(paymentId: string): Promise<{
-  verified: boolean;
-  requiredCapabilities: string[];
-  satisfiedCapabilities: string[];
-  verifierDecision: 'ACCEPT' | 'REJECT';
-}> {
-  return sdkCall(
-    async () => {
-      const url = process.env.HSP_COORDINATOR_URL;
-      if (!url) throw new Error('HSP_COORDINATOR_URL not set');
-      const resp = await fetch(`${url}/verify/${paymentId}`, {
-        headers: { 'x-api-key': process.env.HSP_API_KEY ?? '' },
-      });
-      if (!resp.ok) throw new Error(`HSP verify: ${resp.status}`);
-      return resp.json();
-    },
-    {
-      verified: true,
-      requiredCapabilities: ['attests:kyc'],
-      satisfiedCapabilities: ['attests:kyc'],
-      verifierDecision: 'ACCEPT' as const,
-    },
-    'HSP Verify Settlement'
+/** GET /payments/:id — single payment status + stored triple */
+export async function getPayment(paymentId: string): Promise<HSPPayment | null> {
+  return hspFetch<HSPPayment | null>(
+    `/payments/${paymentId}`,
+    {},
+    null
   );
+}
+
+/** GET /payments/:id/explain — decision trace (what the Explorer shows) */
+export async function explainPayment(paymentId: string): Promise<HSPExplainResult | null> {
+  return hspFetch<HSPExplainResult | null>(
+    `/payments/${paymentId}/explain`,
+    {},
+    null
+  );
+}
+
+/**
+ * POST /payments — register a signed mandate (+ attestations)
+ * This is a WRITE endpoint — requires Bearer token.
+ * 
+ * The mandate must be an EIP-712 signed mandate object.
+ * paymentId = keccak256(mandate)
+ */
+export async function registerMandate(mandate: {
+  signedMandate: any;
+  attestations?: any[];
+}): Promise<{ paymentId: string; status: HSPStatus } | null> {
+  return hspFetch<{ paymentId: string; status: HSPStatus } | null>(
+    '/payments',
+    {
+      method: 'POST',
+      headers: hspHeaders(true),
+      body: JSON.stringify(mandate),
+    },
+    null
+  );
+}
+
+/**
+ * POST /payments/:id/observe — ask the Coordinator to observe settlement tx
+ * After you broadcast the ERC-20 transfer on-chain, call this with the txHash.
+ * The Coordinator waits for confirmations, finds the Transfer log, 
+ * and the adapter key signs a Receipt.
+ */
+export async function observeSettlement(
+  paymentId: string,
+  txHash: string
+): Promise<{ status: HSPStatus; receipt?: any } | null> {
+  return hspFetch<{ status: HSPStatus; receipt?: any } | null>(
+    `/payments/${paymentId}/observe`,
+    {
+      method: 'POST',
+      headers: hspHeaders(true),
+      body: JSON.stringify({ txHash }),
+    },
+    null
+  );
+}
+
+/**
+ * POST /payments/:id/receipts — submit an adapter-signed receipt
+ * For custom adapters (like our ShieldAdapter).
+ */
+export async function submitReceipt(
+  paymentId: string,
+  receipt: any
+): Promise<{ status: HSPStatus } | null> {
+  return hspFetch<{ status: HSPStatus } | null>(
+    `/payments/${paymentId}/receipts`,
+    {
+      method: 'POST',
+      headers: hspHeaders(true),
+      body: JSON.stringify(receipt),
+    },
+    null
+  );
+}
+
+/** GET /adapter-operators — adapter operators this deployment trusts */
+export async function getAdapterOperators(): Promise<any> {
+  return hspFetch('/adapter-operators', {}, []);
+}
+
+// ── Aggregated convenience functions for our backend routes ──
+
+/** Get full HSP ecosystem status for the evidence/stats dashboard */
+export async function getEcosystemStatus(): Promise<{
+  chains: HSPChainInfo[];
+  stats: HSPStats;
+  requirements: any;
+  issuers: any;
+  adapterOperators: any;
+}> {
+  const [chains, stats, requirements, issuers, adapterOperators] = await Promise.all([
+    getChains(),
+    getStats(),
+    getRequirements(),
+    getIssuers(),
+    getAdapterOperators(),
+  ]);
+  return { chains, stats, requirements, issuers, adapterOperators };
 }

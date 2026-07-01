@@ -14,6 +14,7 @@ import { createEvidenceRouter } from './routes/evidence.js';
 import { createAdvisorRouter } from './routes/advisor.js';
 import { createVerifyRouter } from './routes/verify.js';
 import { createViewKeyRouter } from './routes/viewkey.js';
+import { createHSPRouter } from './routes/hsp.js';
 
 const PORT = parseInt(process.env.PORT ?? '3001', 10);
 const app = express();
@@ -36,6 +37,7 @@ app.use('/api', createEvidenceRouter(db));
 app.use('/api', createAdvisorRouter(db));
 app.use('/api', createVerifyRouter(db));
 app.use('/api', createViewKeyRouter(db));
+app.use('/api', createHSPRouter());
 
 // Global error handler
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
@@ -58,7 +60,7 @@ app.listen(PORT, () => {
 ║  Database: ${'SQLite (shieldpay.sqlite)'.padEnd(47)}║
 ║  CCIP:     ${(process.env.CCIP_ROUTER_HASHKEY ? 'Configured' : 'Not configured').padEnd(47)}║
 ║  HSP:      ${(process.env.HSP_COORDINATOR_URL ? 'Configured' : 'Not configured').padEnd(47)}║
-║  AI:       ${(process.env.ANTHROPIC_API_KEY ? 'Claude API' : 'Mock mode').padEnd(47)}║
+║  AI:       ${(process.env.AI_API_URL ? '9router (DeepSeek)' : 'Mock mode').padEnd(47)}║
 ╚══════════════════════════════════════════════════════════════╝
   `);
   console.log(`→ Health: http://localhost:${PORT}/api/health`);

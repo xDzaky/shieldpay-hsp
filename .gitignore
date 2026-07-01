@@ -49,3 +49,8 @@ coverage/
 *.sqlite-wal
 *.sqlite-shm
 *.db
+
+# Internal docs
+PROJECT_SPEC.md
+inform.txt
+hashfans-doc.txt

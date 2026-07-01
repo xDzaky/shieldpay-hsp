@@ -11,7 +11,7 @@ import { createHash } from 'crypto';
 import type { ShieldPayDB } from '../db/database.js';
 import { verifyRangeProof } from '../services/zk.js';
 import { getCCIPMessageStatus, getCCIPExplorerUrl } from '../services/ccip.js';
-import { proposeSettlement, getReceipt } from '../services/hsp.js';
+import { registerMandate, getPayment as getHSPPayment } from '../services/hsp.js';
 
 export function createPaymentsRouter(db: ShieldPayDB): Router {
   const router = Router();
@@ -62,10 +62,10 @@ export function createPaymentsRouter(db: ShieldPayDB): Router {
         ccipStatus = await getCCIPMessageStatus(payment.ccip_message_id as string);
       }
 
-      // Get HSP receipt if available
+      // Get HSP payment data from real coordinator
       let hspReceipt = null;
       if (payment.status === 'HSP_OBSERVED' || payment.status === 'HSP_SETTLED') {
-        hspReceipt = await getReceipt(req.params.id);
+        hspReceipt = await getHSPPayment(req.params.id);
       }
 
       // Get view key grants
@@ -171,20 +171,17 @@ export function createPaymentsRouter(db: ShieldPayDB): Router {
         },
       });
 
-      // Propose to HSP Coordinator
-      const hspProposal = await proposeSettlement({
-        paymentId,
+      // Register mandate with HSP Coordinator (real API call)
+      const hspResult = await registerMandate({
         signedMandate: signed_mandate,
-        amountCommitment: amount_commitment,
-        capabilities: [],
       });
 
-      if (hspProposal.status === 'PROPOSED') {
+      if (hspResult && hspResult.status === 'PROPOSED') {
         db.updatePaymentStatus(paymentId, 'HSP_PROPOSED');
         db.addEvidenceLog({
           payment_id: paymentId,
           event_type: 'HSP_PROPOSED',
-          event_data: { proposal_id: hspProposal.proposalId },
+          event_data: { hsp_payment_id: hspResult.paymentId },
         });
       }
 
@@ -193,7 +190,7 @@ export function createPaymentsRouter(db: ShieldPayDB): Router {
         status: 'CCIP_PENDING',
         zk_proof_valid: proofVerification.valid,
         zk_proof_details: proofVerification.details,
-        hsp_proposal: hspProposal,
+        hsp_result: hspResult,
         anchored: false,
         transparency_note: 'Payment initiated. On-chain anchoring will be confirmed when CCIP message is finalized.',
       });
