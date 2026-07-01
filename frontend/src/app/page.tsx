@@ -6,7 +6,7 @@ import { GlassCard } from '@/components/GlassCard';
 import { StatusTracker } from '@/components/StatusTracker';
 import { StatsGrid } from '@/components/StatsGrid';
 import { ShieldBadge } from '@/components/ShieldBadge';
-import { fetchStats, requestAdvisor, initiatePayment } from '@/lib/api';
+import { fetchStats, requestAdvisor, initiatePayment, fetchHSPStats } from '@/lib/api';
 
 const SOURCE_CHAINS = [
   { name: 'Base Sepolia', selector: '10344971235874465080' },
@@ -33,8 +33,11 @@ export default function HomePage() {
   const [paymentStatus, setPaymentStatus] = useState<string | null>(null);
   const [currentStep, setCurrentStep] = useState(-1);
 
+  const [hspStats, setHspStats] = useState<{ totalPayments: number; byChainStatus: Array<{ chain: string; status: string; count: number }> } | null>(null);
+
   useEffect(() => {
     fetchStats().then(setStats).catch(console.error);
+    fetchHSPStats().then(setHspStats).catch(console.error);
   }, []);
 
   const connectWallet = async () => {
@@ -139,19 +142,28 @@ export default function HomePage() {
         </p>
       </div>
 
-      {/* Stats */}
-      {stats && (
-        <div className="mb-12">
-          <StatsGrid
-            stats={[
-              { label: 'Settlements', value: stats.total_payments ?? 0, icon: CheckCircle2 },
-              { label: 'Success Rate', value: stats.success_rate ?? 0, suffix: '%', icon: Sparkles, color: 'text-[#00D4AA]' },
-              { label: 'Chains', value: 5, icon: Layers },
-              { label: 'ZK Proofs', value: stats.zk_proofs_verified ?? 0, icon: Shield },
-            ]}
-          />
-        </div>
-      )}
+      {/* Stats — merges local DB + real HSP coordinator */}
+      <div className="mb-12">
+        <StatsGrid
+          stats={[
+            {
+              label: 'HSP Settled',
+              value: hspStats?.byChainStatus.find(s => s.status === 'SETTLED')?.count ?? stats?.hsp_settlements ?? 0,
+              icon: CheckCircle2,
+              color: 'text-[#10B981]',
+            },
+            {
+              label: 'Live on Coordinator',
+              value: hspStats?.totalPayments ?? 0,
+              icon: Sparkles,
+              color: 'text-[#00D4AA]',
+            },
+            { label: 'Source Chains', value: 5, icon: Layers },
+            { label: 'ZK Proofs', value: stats?.zk_proofs_verified ?? 0, icon: Shield },
+          ]}
+        />
+      </div>
+
 
       {/* Send Payment Form */}
       <GlassCard glow className="p-8 mb-8">

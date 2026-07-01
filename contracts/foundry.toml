@@ -9,7 +9,12 @@ evm_version = "paris"
 
 [rpc_endpoints]
 hashkey_testnet = "${HASHKEY_TESTNET_RPC_URL}"
+hashkey_mainnet = "https://mainnet.hsk.xyz"
 base_sepolia = "${BASE_SEPOLIA_RPC_URL}"
+
+[etherscan]
+hashkey_testnet = { key = "${ETHERSCAN_API_KEY}", url = "https://testnet-explorer.hsk.xyz/api" }
+hashkey_mainnet = { key = "${ETHERSCAN_API_KEY}", url = "https://hashkey.blockscout.com/api" }
 
 [fmt]
 line_length = 120
