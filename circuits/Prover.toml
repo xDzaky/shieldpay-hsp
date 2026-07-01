@@ -1,6 +1,7 @@
-# Example prover inputs for testing
-amount = "1000"
-blinding_factor = "98765432101234567890"
-payer_balance = "5000"
-commitment = ""
-max_allowed_amount = "10000"
+[amount]
+amount = "100000"
+blinding_factor = "42"
+payer_balance = "500000"
+commitment_lo = "100042"
+commitment_hi = "4200000"
+max_allowed_amount = "1000000"

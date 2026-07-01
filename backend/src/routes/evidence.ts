@@ -51,21 +51,25 @@ export function createEvidenceRouter(db: ShieldPayDB): Router {
         // Contract addresses (from env — empty if not yet deployed)
         contract_addresses: {
           shield_adapter: process.env.SHIELD_ADAPTER_ADDRESS ?? 'not deployed',
-          mock_usdc_hashkey: process.env.MOCK_USDC_HASHKEY ?? 'not deployed',
+          hsp_adapter: process.env.HSP_ADAPTER_ADDRESS ?? '0x467AaF355DF243379B961Ce00abBae20c1e25012',
+          hsp_usdc: process.env.HSP_USDC_ADDRESS ?? '0x8FE3cB719Ee4410E236Cd6b72ab1fCDC06eF53c6',
           mock_usdc_source: process.env.MOCK_USDC_BASE_SEPOLIA ?? 'not deployed',
-          zk_verifier: process.env.ZK_VERIFIER_ADDRESS ?? 'not deployed',
+          zk_verifier: process.env.ZK_VERIFIER_ADDRESS ?? 'not deployed (PlaceholderVerifier)',
         },
 
-        // Explorer links
+        // Explorer links (updated with correct HashKey Chain URLs from docs)
         explorer_links: {
           shield_adapter: process.env.SHIELD_ADAPTER_ADDRESS
-            ? `https://hashkeychain-testnet-explorer.alt.technology/address/${process.env.SHIELD_ADAPTER_ADDRESS}`
+            ? `https://testnet-explorer.hsk.xyz/address/${process.env.SHIELD_ADAPTER_ADDRESS}`
             : null,
+          hsp_adapter: `https://testnet-explorer.hsk.xyz/address/0x467AaF355DF243379B961Ce00abBae20c1e25012`,
+          hsp_usdc: `https://testnet-explorer.hsk.xyz/address/0x8FE3cB719Ee4410E236Cd6b72ab1fCDC06eF53c6`,
           ccip_explorer: 'https://ccip.chain.link',
           hsp_explorer: process.env.HSP_COORDINATOR_URL
             ? `${process.env.HSP_COORDINATOR_URL}/explorer`
-            : null,
-          hashkey_explorer: 'https://hashkeychain-testnet-explorer.alt.technology',
+            : 'https://hsp-hackathon.hashkeymerchant.com/explorer',
+          hashkey_explorer: 'https://testnet-explorer.hsk.xyz',
+          hashkey_blockscout: 'https://hashkey.blockscout.com',
         },
       });
     } catch (error) {
