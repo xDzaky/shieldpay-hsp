@@ -1,17 +1,35 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { FileCheck, CheckCircle2, XCircle, Shield, ExternalLink, Hash, RefreshCw, Link2 } from 'lucide-react';
+import { FileCheck, CheckCircle2, XCircle, Shield, ExternalLink, Hash, RefreshCw, Link2, Activity, Globe, Zap } from 'lucide-react';
 import { GlassCard } from '@/components/GlassCard';
 import { StatsGrid } from '@/components/StatsGrid';
-import { fetchEvidence } from '@/lib/api';
+import { fetchEvidence, fetchHSPStats, fetchHSPChains, fetchHSPPayments } from '@/lib/api';
+
+interface HSPPaymentItem {
+  paymentId: string;
+  chain: string;
+  status: string;
+  amount: string;
+  token: string;
+  createdAt: number;
+  updatedAt: number;
+}
 
 export default function EvidencePage() {
   const [evidence, setEvidence] = useState<Record<string, unknown> | null>(null);
+  const [hspStats, setHspStats] = useState<{ byChainStatus: Array<{ chain: string; status: string; count: number }>; totalPayments: number } | null>(null);
+  const [hspChains, setHspChains] = useState<Array<Record<string, unknown>>>([]);
+  const [hspPayments, setHspPayments] = useState<HSPPaymentItem[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetchEvidence().then(setEvidence).catch(console.error).finally(() => setLoading(false));
+    Promise.all([
+      fetchEvidence().then(setEvidence).catch(console.error),
+      fetchHSPStats().then(setHspStats).catch(console.error),
+      fetchHSPChains().then(d => setHspChains(d.chains)).catch(console.error),
+      fetchHSPPayments(10).then(d => setHspPayments(d.payments)).catch(console.error),
+    ]).finally(() => setLoading(false));
   }, []);
 
   if (loading) {
@@ -30,6 +48,9 @@ export default function EvidencePage() {
   const stats = (evidence?.stats ?? {}) as Record<string, number>;
   const contracts = (evidence?.contract_addresses ?? {}) as Record<string, string>;
   const links = (evidence?.explorer_links ?? {}) as Record<string, string | null>;
+
+  const settledCount = hspStats?.byChainStatus.find(s => s.status === 'SETTLED')?.count ?? 0;
+  const proposedCount = hspStats?.byChainStatus.find(s => s.status === 'PROPOSED')?.count ?? 0;
 
   return (
     <div className="max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
@@ -51,8 +72,9 @@ export default function EvidencePage() {
           }`}>
             {evidence?.evidence_status === 'ready' ? '✅ Evidence Ready' : '⚠️ Evidence Incomplete'}
           </span>
-          <span className="text-xs text-[#6B7280] font-mono">
-            Generated: {new Date(evidence?.generated_at as string).toLocaleString()}
+          <span className="px-3 py-1 rounded-full text-xs font-bold bg-[#00D4AA]/10 text-[#00D4AA] border border-[#00D4AA]/20">
+            <Activity size={10} className="inline mr-1" />
+            HSP Live — {hspStats?.totalPayments ?? 0} payments on coordinator
           </span>
         </div>
       </div>
@@ -61,13 +83,118 @@ export default function EvidencePage() {
       <div className="mb-8">
         <StatsGrid
           stats={[
-            { label: 'Payments', value: stats.total_payments ?? 0, icon: Shield },
-            { label: 'Success Rate', value: stats.success_rate ?? 0, suffix: '%', icon: CheckCircle2, color: 'text-[#00D4AA]' },
-            { label: 'Tests Passed', value: stats.conformance_tests_passed ?? 0, icon: FileCheck, color: 'text-[#10B981]' },
+            { label: 'HSP Settled', value: settledCount, icon: CheckCircle2, color: 'text-[#10B981]' },
+            { label: 'HSP Proposed', value: proposedCount, icon: Activity, color: 'text-[#FFB800]' },
+            { label: 'Tests Passed', value: stats.conformance_tests_passed ?? 0, icon: FileCheck, color: 'text-[#00D4AA]' },
             { label: 'ZK Verified', value: stats.zk_proofs_verified ?? 0, icon: Hash },
           ]}
         />
       </div>
+
+      {/* HSP Live Settlement Data */}
+      <GlassCard className="p-6 mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Globe size={16} className="text-[#00D4AA]" />
+            <h2 className="text-xs font-bold text-[#6B7280] uppercase tracking-widest">HSP Live Settlements (Real Coordinator Data)</h2>
+          </div>
+          <a
+            href="https://hsp-hackathon.hashkeymerchant.com/explorer"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1 text-[10px] text-[#00D4AA] hover:text-[#10B981] transition-colors"
+          >
+            Open HSP Explorer <ExternalLink size={10} />
+          </a>
+        </div>
+
+        {/* Chain Info */}
+        {hspChains.length > 0 && (
+          <div className="mb-4 p-3 rounded-lg bg-[#0A0F1E]/50 border border-[#1F2937]/50">
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {hspChains.map((chain: Record<string, unknown>, idx: number) => {
+                const stablecoin = chain.stablecoin as Record<string, unknown> | undefined;
+                return (
+                  <div key={idx}>
+                    <span className="text-[9px] text-[#6B7280] uppercase tracking-widest">Chain</span>
+                    <p className="text-xs font-mono text-[#F9FAFB]">{String(chain.name)} (ID: {String(chain.chainId)})</p>
+                    <span className="text-[9px] text-[#6B7280] uppercase tracking-widest">Stablecoin</span>
+                    <p className="text-xs font-mono text-[#00D4AA]">{stablecoin ? String(stablecoin.symbol) : 'USDC'}</p>
+                    <span className="text-[9px] text-[#6B7280] uppercase tracking-widest">Adapter</span>
+                    <p className="text-[10px] font-mono text-[#9CA3AF] truncate" title={String(chain.adapterAddress)}>{String(chain.adapterAddress ?? '').slice(0, 16)}...</p>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* Recent HSP Payments */}
+        <div className="overflow-x-auto">
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-[#1F2937]">
+                <th className="text-left text-[10px] font-bold text-[#6B7280] uppercase tracking-widest py-3 px-2">Payment ID</th>
+                <th className="text-center text-[10px] font-bold text-[#6B7280] uppercase tracking-widest py-3 px-2">Status</th>
+                <th className="text-right text-[10px] font-bold text-[#6B7280] uppercase tracking-widest py-3 px-2">Amount (USDC)</th>
+                <th className="text-right text-[10px] font-bold text-[#6B7280] uppercase tracking-widest py-3 px-2">Settled At</th>
+                <th className="text-center text-[10px] font-bold text-[#6B7280] uppercase tracking-widest py-3 px-2">Explorer</th>
+              </tr>
+            </thead>
+            <tbody>
+              {hspPayments.map((p, idx) => (
+                <tr key={idx} className="border-b border-[#1F2937]/50 hover:bg-[#1A1F2E]/50 transition-colors">
+                  <td className="py-3 px-2">
+                    <span className="font-mono text-xs text-[#F9FAFB]" title={p.paymentId}>
+                      {p.paymentId.slice(0, 10)}...{p.paymentId.slice(-6)}
+                    </span>
+                  </td>
+                  <td className="py-3 px-2 text-center">
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                      p.status === 'SETTLED'
+                        ? 'bg-[#10B981]/10 text-[#10B981]'
+                        : p.status === 'PROPOSED'
+                        ? 'bg-[#FFB800]/10 text-[#FFB800]'
+                        : 'bg-[#EF4444]/10 text-[#EF4444]'
+                    }`}>
+                      {p.status === 'SETTLED' && <CheckCircle2 size={10} />}
+                      {p.status === 'PROPOSED' && <Activity size={10} />}
+                      {p.status}
+                    </span>
+                  </td>
+                  <td className="py-3 px-2 text-right">
+                    <span className="text-xs font-mono text-[#F9FAFB]">
+                      {(parseInt(p.amount) / 1_000_000).toFixed(2)}
+                    </span>
+                  </td>
+                  <td className="py-3 px-2 text-right">
+                    <span className="text-xs text-[#6B7280] font-mono">
+                      {new Date(p.updatedAt * 1000).toLocaleString()}
+                    </span>
+                  </td>
+                  <td className="py-3 px-2 text-center">
+                    <a
+                      href={`https://hsp-hackathon.hashkeymerchant.com/explorer?id=${p.paymentId}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[#00D4AA] hover:text-[#10B981] transition-colors"
+                    >
+                      <ExternalLink size={12} />
+                    </a>
+                  </td>
+                </tr>
+              ))}
+              {hspPayments.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="py-8 text-center text-sm text-[#6B7280]">
+                    No HSP payments found. Coordinator may be offline.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </GlassCard>
 
       {/* Conformance Test Results */}
       <GlassCard className="p-6 mb-6">
@@ -190,6 +317,17 @@ export default function EvidencePage() {
             <h2 className="text-xs font-bold text-[#6B7280] uppercase tracking-widest">Explorer Links</h2>
           </div>
           <div className="space-y-3">
+            <a
+              href="https://hsp-hackathon.hashkeymerchant.com/explorer"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-between py-2 border-b border-[#1F2937]/30 group"
+            >
+              <span className="text-xs text-[#00D4AA] font-semibold group-hover:text-[#10B981] transition-colors">
+                <Zap size={10} className="inline mr-1" /> HSP Explorer (Live)
+              </span>
+              <ExternalLink size={12} className="text-[#6B7280] group-hover:text-[#00D4AA] transition-colors" />
+            </a>
             {Object.entries(links).filter(([, url]) => url).map(([name, url]) => (
               <a
                 key={name}

@@ -161,3 +161,62 @@ export async function grantViewKey(data: {
     body: JSON.stringify(data),
   });
 }
+
+// ---- HSP Coordinator (Real API Data) ----
+
+export async function fetchHSPStats() {
+  return apiFetch<{
+    byChainStatus: Array<{ chain: string; status: string; count: number }>;
+    totalPayments: number;
+  }>('/api/hsp/stats');
+}
+
+export async function fetchHSPChains() {
+  return apiFetch<{
+    chains: Array<{
+      name: string;
+      chainId: number;
+      stablecoin: { address: string; symbol: string; decimals: number };
+      confirmations: number;
+      adapterAddress: string;
+      adapterOperatorUrl: string;
+    }>;
+  }>('/api/hsp/chains');
+}
+
+export async function fetchHSPPayments(limit = 20) {
+  return apiFetch<{
+    payments: Array<{
+      paymentId: string;
+      chain: string;
+      status: string;
+      amount: string;
+      token: string;
+      createdAt: number;
+      updatedAt: number;
+    }>;
+    count: number;
+  }>(`/api/hsp/payments?limit=${limit}`);
+}
+
+export async function fetchHSPPayment(id: string) {
+  return apiFetch<Record<string, unknown>>(`/api/hsp/payments/${id}`);
+}
+
+export async function fetchHSPExplain(id: string) {
+  return apiFetch<Record<string, unknown>>(`/api/hsp/payments/${id}/explain`);
+}
+
+export async function fetchHSPEcosystem() {
+  return apiFetch<{
+    chains: Array<Record<string, unknown>>;
+    stats: { byChainStatus: Array<{ chain: string; status: string; count: number }>; totalPayments: number };
+    requirements: Record<string, unknown>;
+    issuers: Record<string, unknown>;
+    adapterOperators: unknown;
+  }>('/api/hsp/ecosystem');
+}
+
+export async function fetchHSPRequirements() {
+  return apiFetch<Record<string, unknown>>('/api/hsp/requirements');
+}
